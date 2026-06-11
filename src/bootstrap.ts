@@ -1,6 +1,7 @@
 import logger from "./utils/logger";
 import connection from "./whatsapp/connection";
 import { supervisor } from "./kernel/supervisor";
+import { connectMongoDB } from "./config/mongodb";
 
 let shutdownHandlersRegistered = false;
 
@@ -26,6 +27,9 @@ export async function bootstrap() {
   try {
     logger.info("🚀 Booting Aiden AI...");
     registerShutdownHandlers();
+
+    // Connect to MongoDB
+    await connectMongoDB();
 
     // Connect WhatsApp
     await connection.start();
