@@ -1,37 +1,23 @@
 import logger from "./utils/logger";
-import { whatsappConnection } from "./whatsapp/connection";
-import { startEventListeners } from "./whatsapp/event-listeners";
-import { registerTools } from "./tools";
-import { runtimeConfig } from "./config/runtime";
+import { connection } from "./whatsapp/connection";
+import { supervisor } from "./kernel/supervisor";
 
-export class Bootstrap {
-  async start(): Promise<void> {
-    try {
-      logger.info("Starting Aiden AI system...");
+export async function bootstrap() {
+  try {
+    logger.info("🚀 Booting Aiden AI...");
 
-      logger.info(
-        `Active model: ${runtimeConfig.activeModel}`
-      );
+    // Connect WhatsApp
+    await connection.connect();
 
-      logger.info(
-        `Active provider: ${runtimeConfig.activeProvider}`
-      );
+    // Start supervisor (auto-recovery system)
+    supervisor.start();
 
-      // 1. REGISTER TOOLS
-      registerTools();
+    logger.info("✅ Aiden is online");
+  } catch (err) {
+    logger.error("❌ Bootstrap failed:", err);
 
-      // 2. START WHATSAPP CONNECTION
-      await whatsappConnection.start();
-
-      // 3. START EVENT LISTENERS
-      startEventListeners();
-
-      logger.info("Aiden is now ONLINE 🚀");
-    } catch (err) {
-      logger.error("Bootstrap failed:", err);
-      process.exit(1);
-    }
+    setTimeout(() => bootstrap(), 5000);
   }
 }
 
-export const bootstrap = new Bootstrap();
+export default bootstrap;

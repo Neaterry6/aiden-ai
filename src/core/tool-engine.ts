@@ -1,70 +1,40 @@
-import logger from "../utils/logger";
+import logger from "../utils/utils";
+import { toolRegistry } from "./tool-registry";
 
-export interface ToolContext {
-  name: string;
-
-  input: any;
-
-  senderId: string;
-
-  groupId?: string;
-}
-
-export interface ToolResult {
-  success: boolean;
-
-  output?: any;
-
-  error?: string;
-}
+export type ToolInput = {
+  [key: string]: any;
+};
 
 export class ToolEngine {
-  private tools: Map<
-    string,
-    (input: any, ctx: ToolContext) => Promise<any>
-  > = new Map();
+  async runTool(name: string, input: ToolInput) {
+    const tool = toolRegistry.get(name);
 
-  registerTool(
-    name: string,
-    handler: (input: any, ctx: ToolContext) => Promise<any>
-  ): void {
-    this.tools.set(name, handler);
-    logger.info(`Tool registered: ${name}`);
-  }
-
-  async execute(
-    ctx: ToolContext
-  ): Promise<ToolResult> {
-    try {
-      const tool = this.tools.get(ctx.name);
-
-      if (!tool) {
-        return {
-          success: false,
-          error: `Tool not found: ${ctx.name}`,
-        };
-      }
-
-      logger.info(`Executing tool: ${ctx.name}`);
-
-      const result = await tool(ctx.input, ctx);
-
+    if (!tool) {
       return {
-        success: true,
-        output: result,
+        error: `Tool not found: ${name}`,
       };
+    }
+
+    try {
+      logger.info(`🧰 Executing tool: ${name}`);
+
+      const result = await tool.handler(input);
+
+      return result;
     } catch (err: any) {
-      logger.error("Tool execution error:", err);
+      logger.error(`Tool execution failed (${name}):`, err);
 
       return {
-        success: false,
-        error: err?.message || "Unknown error",
+        error: `Tool failed: ${name}`,
       };
     }
   }
 
-  listTools(): string[] {
-    return Array.from(this.tools.keys());
+  listTools() {
+    return toolRegistry.list().map((t) => ({
+      name: t.name,
+      description: t.description,
+    }));
   }
 }
 

@@ -1,72 +1,58 @@
 import logger from "../utils/logger";
-import { Role } from "../types/permission";
-
-export interface IncomingMessage {
-  senderId: string;
-
-  groupId?: string;
-
-  isGroup: boolean;
-
-  isDM: boolean;
-
-  text: string;
-
-  isMentioned: boolean;
-
-  isAdmin: boolean;
-}
+import { commandHandler } from "../handlers/command.handler";
+import { getRuntimeConfig } from "../config/runtime";
 
 export class MessageRouter {
-  async route(message: IncomingMessage): Promise<void> {
-    logger.info("Routing message...");
+  async route(ctx: any): Promise<{ handled: boolean; response?: string }> {
+    try {
+      const { text, senderId } = ctx;
 
-    // BASIC FILTER
-    if (!message.text || message.text.trim().length === 0) {
-      return;
+      // 🔒 GLOBAL BOT CHECK
+      if (!getRuntimeConfig().globalBotEnabled) {
+        return {
+          handled: true,
+          response: "Bot is currently disabled.",
+        };
+      }
+
+      // 1. COMMAND LAYER
+      const commandResponse = await commandHandler.handle(
+        text,
+        senderId
+      );
+
+      if (commandResponse) {
+        logger.info("Command executed");
+
+        return {
+          handled: true,
+          response: commandResponse,
+        };
+      }
+
+      // 2. FEATURE GATES
+      if (!this.isAllowed(ctx)) {
+        return {
+          handled: true,
+          response: "Access restricted.",
+        };
+      }
+
+      return {
+        handled: false,
+      };
+    } catch (err) {
+      logger.error("Router error:", err);
+
+      return {
+        handled: true,
+        response: "Routing error occurred.",
+      };
     }
-
-    // COMMAND DETECTION
-    if (message.text.startsWith("Aiden ")) {
-      return this.handleCommand(message);
-    }
-
-    // GROUP FLOW
-    if (message.isGroup) {
-      return this.handleGroupMessage(message);
-    }
-
-    // DM FLOW
-    if (message.isDM) {
-      return this.handleDMMessage(message);
-    }
-
-    // DEFAULT FLOW
-    return this.handleGeneralMessage(message);
   }
 
-  private async handleCommand(msg: IncomingMessage) {
-    logger.info("Handling command:", msg.text);
-
-    // NEXT: command handler system
-  }
-
-  private async handleGroupMessage(msg: IncomingMessage) {
-    logger.info("Group message received");
-
-    // NEXT: group AI + policy checks
-  }
-
-  private async handleDMMessage(msg: IncomingMessage) {
-    logger.info("DM message received");
-
-    // NEXT: DM AI + memory layer
-  }
-
-  private async handleGeneralMessage(msg: IncomingMessage) {
-    logger.info("General message received");
-
-    // NEXT: fallback AI response
+  private isAllowed(ctx: any): boolean {
+    return true;
   }
 }
 

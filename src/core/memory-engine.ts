@@ -1,3 +1,4 @@
+import redis from "../config/redis";
 import logger from "../utils/logger";
 
 export interface MemoryRecord {
@@ -15,46 +16,41 @@ export interface MemoryRecord {
 }
 
 export class MemoryEngine {
-  private memory: Map<string, MemoryRecord[]> =
-    new Map();
-
-  private getBucket(userId: string): MemoryRecord[] {
-    if (!this.memory.has(userId)) {
-      this.memory.set(userId, []);
-    }
-
-    return this.memory.get(userId)!;
+  private key(userId: string) {
+    return `memory:${userId}`;
   }
 
-  write(record: MemoryRecord): void {
-    const bucket = this.getBucket(record.userId);
+  async write(record: MemoryRecord): Promise<void> {
+    const key = this.key(record.userId);
 
-    bucket.push(record);
+    await redis.lpush(key, JSON.stringify(record));
 
-    logger.info(
-      `Memory stored for ${record.userId}: ${record.key}`
+    await redis.ltrim(key, 0, 200); // keep last 200 memories
+
+    logger.info(`Memory saved for ${record.userId}`);
+  }
+
+  async read(userId: string): Promise<MemoryRecord[]> {
+    const key = this.key(userId);
+
+    const data = await redis.lrange(key, 0, -1);
+
+    return data.map((d) => JSON.parse(d));
+  }
+
+  async search(userId: string, query: string): Promise<MemoryRecord[]> {
+    const all = await this.read(userId);
+
+    return all.filter(
+      (m) =>
+        m.key.includes(query) ||
+        m.value.includes(query)
     );
   }
 
-  read(userId: string, key?: string): MemoryRecord[] {
-    const bucket = this.getBucket(userId);
+  async clear(userId: string): Promise<void> {
+    await redis.del(this.key(userId));
 
-    if (!key) return bucket;
-
-    return bucket.filter((m) => m.key === key);
-  }
-
-  search(userId: string, query: string): MemoryRecord[] {
-    const bucket = this.getBucket(userId);
-
-    return bucket.filter((m) =>
-      m.key.includes(query) ||
-      m.value.includes(query)
-    );
-  }
-
-  clear(userId: string): void {
-    this.memory.set(userId, []);
     logger.warn(`Memory cleared for ${userId}`);
   }
 }

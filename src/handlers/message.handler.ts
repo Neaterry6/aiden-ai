@@ -1,20 +1,20 @@
-import logger from "../utils/logger";
+import logger from "../utils/utils";
+
 import { messageRouter } from "../core/router";
 import { aiService } from "../services/ai.service";
 import { responseBuilder } from "../core/response-builder";
+
 import { messageSender } from "../whatsapp/sender";
+import { rateLimiter } from "../security/rate-limiter";
+import { presenceEngine } from "../core/presence-engine";
 
 export class MessageHandler {
   async handle(event: any): Promise<void> {
     try {
       const message = event.messages?.[0];
-
       if (!message?.message) return;
 
-      const isGroup =
-        message.key?.remoteJid?.endsWith("@g.us");
-
-      const isDM = !isGroup;
+      const isGroup = message.key?.remoteJid?.endsWith("@g.us");
 
       const senderId =
         message.key?.participant ||
@@ -29,45 +29,61 @@ export class MessageHandler {
         message.message?.extendedTextMessage?.text ||
         "";
 
-      const isMentioned = text.includes("@");
-
-      const isAdmin = false;
+      // 🚨 RATE LIMIT CHECK
+      if (isGroup) {
+        if (!rateLimiter.allowGroup(groupId!)) return;
+      } else {
+        if (!rateLimiter.allowUser(senderId)) return;
+      }
 
       const ctx = {
         senderId,
         groupId,
         isGroup,
-        isDM,
         text,
-        isMentioned,
-        isAdmin,
       };
 
-      logger.info("Message received:", ctx);
+      logger.info("Incoming message:", ctx);
 
-      // ROUTE (you can extend later)
-      await messageRouter.route(ctx);
+      // ⚡ COMMAND ROUTER FIRST
+      const route = await messageRouter.route(ctx);
 
-      // AI GENERATION
+      if (route.handled) {
+        if (route.response) {
+          const jid = groupId || senderId;
+
+          await messageSender.sendText({
+            jid,
+            text: route.response,
+            quoted: message,
+          });
+        }
+        return;
+      }
+
+      // 🧠 AI GENERATION
       const ai = await aiService.generate(ctx);
 
-      // RESPONSE BUILDING
-      const final =
-        await responseBuilder.build({
-          text: ai.text,
-          mode: isGroup ? "GROUP" : "DM",
-          senderId,
-          groupId,
-        });
+      const final = await responseBuilder.build({
+        text: ai.text,
+        mode: isGroup ? "GROUP" : "DM",
+      });
 
-      // SEND BACK TO WHATSAPP
       const jid = groupId || senderId;
 
-      await messageSender.sendText({
-        jid,
+      // 🧍 HUMAN-LIKE RESPONSE DELAY
+      const delay = await presenceEngine.simulate({
+        isGroup,
         text: final.text,
-        quoted: message,
       });
+
+      setTimeout(async () => {
+        await messageSender.sendText({
+          jid,
+          text: final.text,
+          quoted: message,
+        });
+      }, delay);
 
     } catch (err) {
       logger.error("Message handler error:", err);
@@ -75,7 +91,5 @@ export class MessageHandler {
   }
 }
 
-export const messageHandler =
-  new MessageHandler();
-
+export const messageHandler = new MessageHandler();
 export default messageHandler;
