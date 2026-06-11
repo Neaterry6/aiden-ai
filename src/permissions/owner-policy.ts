@@ -1,18 +1,49 @@
 import env from "../config/env";
 import logger from "../utils/logger";
 
+const DEFAULT_OWNER_NUMBERS = [
+  "+234 913 081 5781",
+  "23408120478393",
+];
+
+function clean(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function numberVariants(value: string): string[] {
+  const digits = clean(value);
+  if (!digits) return [];
+
+  const variants = [digits];
+
+  if (digits.startsWith("2340")) {
+    variants.push(`234${digits.slice(4)}`);
+  }
+
+  return variants;
+}
+
+function configuredOwners(): string[] {
+  return [
+    env.owner.number,
+    process.env.OWNER_NUMBERS || "",
+    ...DEFAULT_OWNER_NUMBERS,
+  ]
+    .flatMap((value) => String(value || "").split(","))
+    .flatMap((value) => numberVariants(value))
+    .filter(Boolean);
+}
+
 export class OwnerPolicy {
   isOwner(userId: string): boolean {
-    const owner = env.owner.number;
+    const owners = configuredOwners();
 
-    if (!owner) {
-      logger.warn("OWNER_NUMBER not set in env");
+    if (!owners.length) {
+      logger.warn("OWNER_NUMBER or OWNER_NUMBERS not set in env");
       return false;
     }
 
-    // normalize numbers (basic safety)
-    const clean = (v: string) => v.replace(/\D/g, "");
-    return clean(userId) === clean(owner);
+    return numberVariants(userId).some((value) => owners.includes(value));
   }
 
   canOwnerAction(

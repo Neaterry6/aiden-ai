@@ -5,8 +5,10 @@ import { aiService } from "../services/ai.service";
 import { responseBuilder } from "../core/response-builder";
 
 import { messageSender } from "../whatsapp/sender";
+import { whatsappConnection } from "../whatsapp/connection";
 import { rateLimiter } from "../security/rate-limiter";
 import { presenceEngine } from "../core/presence-engine";
+import { groupApprovalGate } from "../permissions/group-approval";
 
 export class MessageHandler {
   async handle(event: any): Promise<void> {
@@ -28,6 +30,27 @@ export class MessageHandler {
         message.message?.conversation ||
         message.message?.extendedTextMessage?.text ||
         "";
+
+      if (isGroup) {
+        const approval = await groupApprovalGate.evaluate({
+          sock: whatsappConnection.getSocket(),
+          groupId,
+          senderId,
+          text,
+        });
+
+        if (!approval.allowed) {
+          if (approval.response) {
+            await messageSender.sendText({
+              jid: groupId!,
+              text: approval.response,
+              quoted: message,
+            });
+          }
+
+          return;
+        }
+      }
 
       // 🚨 RATE LIMIT CHECK
       if (isGroup) {
